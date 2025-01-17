@@ -3,11 +3,13 @@
 import argparse
 import csv
 import random
+from utils import *
 
 
-def get_model_prediction():
+def get_model_prediction(patient):
     try:
-        return random.choice(["y", "n"])
+        aki_score = random.choice(["y", "n"])
+        return to_label(aki_score, truth="y", false="n")
     except Exception as e:
         # Handle any potential exceptions
         print(f"An error occurred: {e}")
@@ -21,9 +23,12 @@ def main():
     w = csv.writer(open(flags.output, "w"))
     w.writerow(("aki",))
     next(r) # skip headers
-    for _ in r:
+    
+    for record in r:
         # TODO: Implement a better model
-        w.writerow((random.choice(["y", "n"]),))
+        patient = process_patient_data(record)
+
+        w.writerow(get_model_prediction(patient))
 
 if __name__ == "__main__":
     main()

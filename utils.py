@@ -124,7 +124,7 @@ def calculate_rv_ratio(c1, rv1, rv2, creatinine_test_dates):
         return -1
 
 
-def format_patient_data(patient, non_empty_columns, non_creatinine_columns):
+def extract_patient_features(patient, non_empty_columns, non_creatinine_columns):
     """
         Return the formatted patient data
     """
@@ -158,16 +158,47 @@ def process_patient_data(patient_data, data_type):
 
         non_empty_columns = patient_data.count()
 
-        patient = format_patient_data(patient_data, non_empty_columns, non_creatinine_columns)
+        patient = extract_patient_features(patient_data, non_empty_columns, non_creatinine_columns)
         
         if data_type == 'train':
             aki_diagnosis = to_binary(patient_data['aki'], 'y')
             return pd.Series((patient, aki_diagnosis))
         else:
-            return pd.Series(patient)
+            return pd.Series([patient])
     except Exception as e:
         print(f"An error occurred while processing patient data: {e}")
         return ([], -1) if data_type == 'train' else []
+    
+
+def prepare_dataset(data_path, data_type):
+    """
+        Return the processed dataset for each patient
+    """
+    header_len = get_longest_row(data_path)
+    header = get_header(header_len, data_type)
+
+    non_creatinine_columns = 2
+    if data_type == 'train':
+        non_creatinine_columns += 1
+
+    creatinine_columns = header[non_creatinine_columns:].copy()
+
+    patient_data = pd.read_csv(data_path, sep=',', names=header, skiprows=1)
+
+    # get the exam date columns to datetime
+    for i in range(0, len(creatinine_columns), 2):
+        patient_data[creatinine_columns[i]] = pd.to_datetime(patient_data[creatinine_columns[i]])
+
+    formatted_dataset = patient_data.apply(lambda patient_record: process_patient_data(patient_record, data_type), axis=1)
+    if data_type == 'train':
+        formatted_dataset = pd.DataFrame(formatted_dataset)
+        formatted_dataset.rename(columns={0: 'patient_features', 
+                                          1: 'aki_score'}, 
+                                inplace=True)
+    else:
+        formatted_dataset.rename(columns={0: 'patient_features'}, 
+                                inplace=True)
+    return formatted_dataset
 
 
 def nhs_aki_algo(patient):
@@ -176,7 +207,6 @@ def nhs_aki_algo(patient):
     [sex, age, c1, rv1, rv2, rv_ratio, D] = patient
 
     # (low_ri, high_ri) = get_reference_interval(sex, age)
-    
     if rv_ratio >= 1.5:
         return 1
     elif D > 26:

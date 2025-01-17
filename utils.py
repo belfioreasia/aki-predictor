@@ -1,4 +1,5 @@
 import pandas as pd
+from sklearn.metrics import fbeta_score
 
 def to_binary(label, truth):
     """ 
@@ -106,9 +107,10 @@ def calculate_rv_ratio(c1, rv1, rv2, creatinine_test_dates):
         elapsed_days = pd.Timedelta(creatinine_test_dates.iloc[-1] - creatinine_test_dates.iloc[-2]) # second most recent test result
         # print(f"Elapsed days: {elapsed_days}")
 
-        if elapsed_days <= pd.Timedelta(0):
-            raise ValueError("The elapsed time between the last two tests is less than or equal to zero")
-        elif (elapsed_days > pd.Timedelta(0)) and (elapsed_days <= pd.Timedelta(days=7)):
+        # if elapsed_days < pd.Timedelta(0):
+            # print(elapsed_days)
+            # raise ValueError("The elapsed time between the last two tests is less than or equal to zero")
+        if (elapsed_days >= pd.Timedelta(0)) and (elapsed_days <= pd.Timedelta(days=7)):
             # print(f"Elapsed days in [0,7]")
             return c1/rv1
         elif (elapsed_days > pd.Timedelta(days=7)) and (elapsed_days <= pd.Timedelta(days=365)):
@@ -160,9 +162,9 @@ def process_patient_data(patient_data, data_type):
         
         if data_type == 'train':
             aki_diagnosis = to_binary(patient_data['aki'], 'y')
-            return (patient, aki_diagnosis)
+            return pd.Series((patient, aki_diagnosis))
         else:
-            return patient
+            return pd.Series(patient)
     except Exception as e:
         print(f"An error occurred while processing patient data: {e}")
         return ([], -1) if data_type == 'train' else []

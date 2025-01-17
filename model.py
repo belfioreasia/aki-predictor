@@ -4,6 +4,14 @@ import argparse
 import csv
 import random
 
+
+def get_model_prediction():
+    try:
+        return random.choice(["y", "n"])
+    except Exception as e:
+        # Handle any potential exceptions
+        print(f"An error occurred: {e}")
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", default="test.csv")

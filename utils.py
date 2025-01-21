@@ -1,5 +1,4 @@
 import pandas as pd
-from sklearn.metrics import fbeta_score
 
 
 def to_binary(label, truth):
@@ -39,7 +38,7 @@ def get_header(row_length, dataset_type):
             raise Exception(f"Invalid dataset type: {dataset_type}")
         test_num = (row_length - i) // 2
         j = 0
-        while (j <= test_num) and (i < row_length):
+        while (j < test_num) and (i < row_length):
             header[i] = f'creatinine_date_{j}'
             header[i+1] = f'creatinine_result_{j}'
             j += 1
@@ -136,22 +135,22 @@ def extract_patient_features(patient, creatinine_columns):
     last_col = patient[::-1].notnull().idxmax()
     
     creatinine_test_dates = patient.loc[creatinine_columns[0]:last_col:2]
-    creatinine_results = patient.loc[creatinine_columns[1]:last_col:2]
+    creatinine_results = patient.loc[creatinine_columns[1]:last_col:2].astype(float)
 
     sex = to_binary(patient['sex'], 'f')
     age = patient['age']
-
+    
     c1 = creatinine_results.iloc[-1] # most recent test result
 
-    rv1 = creatinine_results.min() # lowest value 
-    rv2 = creatinine_results.median() # median value
-
+    rv1 = creatinine_results.min() # lowest value
+    rv2 = creatinine_results.astype(float).median(numeric_only=True) # median value
+    
     rv_ratio = calculate_rv_ratio(c1, rv1, rv2, creatinine_test_dates)
-
+    
     (elapsed_time, creatinine_change) = get_change_in_last_two_days(creatinine_test_dates, creatinine_results)
     # print(f"Creatinine change in {elapsed_time} = {creatinine_change}")
 
-    return [sex, age, c1, rv1, rv2, rv_ratio, creatinine_change]
+    return sex, age, c1, rv1, rv2, rv_ratio, creatinine_change
 
 
 def process_patient_data(patient_data, creatinine_columns, data_type):
@@ -159,87 +158,75 @@ def process_patient_data(patient_data, creatinine_columns, data_type):
         Return the processed patient data
     """
     try:
-        patient = extract_patient_features(patient_data, creatinine_columns)
-        
+        sex, age, c1, rv1, rv2, rv_ratio, creatinine_change = extract_patient_features(patient_data, creatinine_columns)
         if data_type == 'train':
             aki_diagnosis = to_binary(patient_data['aki'], 'y')
-            return pd.Series((patient, aki_diagnosis))
+            return pd.Series((sex, age, c1, rv1, rv2, rv_ratio, creatinine_change, aki_diagnosis))
         else:
-            return pd.Series([patient])
+            return pd.Series((sex, age, c1, rv1, rv2, rv_ratio, creatinine_change))
     except Exception as e:
         print(f"An error occurred while processing patient data: {e}")
         return ([], -1) if data_type == 'train' else []
     
 
-def prepare_dataset(data_path, data_type):
+def prepare_train_data(data):
     """
         Return the processed dataset for each patient
     """
-    header_len = get_longest_row(data_path)
-    header = get_header(header_len, data_type)
+    header_len = get_longest_row(data)
+    header = get_header(header_len, 'train')
 
     creatinine_columns = [col for col in header if 'creatinine' in col]
 
-    patient_data = pd.read_csv(data_path, sep=',', names=header, skiprows=1)
+    patient_data = pd.read_csv(data, sep=',', names=header, skiprows=1)
 
     # change every test date column into datetime type
     for col in creatinine_columns[::2]:
         patient_data[col] = pd.to_datetime(patient_data[col])
 
-    formatted_dataset = patient_data.apply(lambda patient_record: process_patient_data(patient_record, creatinine_columns, data_type), axis=1)
+    formatted_dataset = patient_data.apply(lambda patient_record: process_patient_data(patient_record, creatinine_columns, data_type = 'train'), axis=1)
     
-    if data_type == 'train':
-        formatted_dataset = pd.DataFrame(formatted_dataset)
-        formatted_dataset.rename(columns={0: 'patient_features', 
-                                          1: 'aki_score'}, 
-                                inplace=True)
-    else:
-        formatted_dataset.rename(columns={0: 'patient_features'}, 
-                                inplace=True)
+    formatted_dataset = pd.DataFrame(formatted_dataset)
+    formatted_dataset.rename(columns={0: 'sex', 
+                                        1: 'age',
+                                        2: 'c1',
+                                        3: 'rv1',
+                                        4: 'rv2',
+                                        5: 'rv_ratio',
+                                        6: 'D',
+                                        7: 'aki'}, 
+                            inplace=True)
     return formatted_dataset
 
 
-def nhs_aki_algo(patient):
+def prepare_test_data(data):
     """
+        Return the processed dataset for each patient
     """
-    [sex, age, c1, rv1, rv2, rv_ratio, D] = patient
 
-    # (low_ri, high_ri) = get_reference_interval(sex, age)
-    if rv_ratio >= 1.5:
-        return 1
-    elif D > 26:
-        return 1
-    else:
-        return 0
+    data = [d for d in data if ((d != '') and (d != 'y') and (d != 'n'))]
 
+    header_len = len(data)
+    header = get_header(header_len, 'test')
 
-def get_reference_interval(sex, age):
-    """
-        Return the Population Reference Interval (RI) based on
-        age and sex of patient.
-        source: resources/annual_conference_2016_-_recognition_of_aki.pdf
-        https://www.google.com/url?sa=t&source=web&rct=j&opi=89978449&url=https://www.nwts.nhs.uk/_file/gCDJ8vu46p_275810.pdf&ved=2ahUKEwifj_P0mfuKAxWqXUEAHQ0oKQEQFnoECBcQAQ&usg=AOvVaw01O_TsELBULOw3GvBNEv3p
-    """
-    if age > 16:
-        if sex == 'm': return (59, 104)
-        else: return (45, 84)
-    elif age == 16: 
-        if sex == 'm': return (54, 99)
-        else: return (48, 81)
-    elif age == 15: 
-        if sex == 'm': return (47, 98)
-        else: return (44, 79)
-    elif age == 14: 
-        if sex == 'm': return (40, 83)
-        else: return (43, 75)
-    elif age == 13: 
-        if sex == 'm': return (38, 76)
-        else: return (38, 74)
-    elif age == 12: return (36, 67)
-    elif age == 11: return (36, 64)
-    elif 9 <= age < 11: return (28, 57)
-    elif 7 <= age < 9: return (30, 48)
-    elif 5 <= age < 7: return (25, 42)
-    elif 3 <= age < 5: return (23, 37)
-    elif 1 <= age < 3: return (15, 31)
-    elif age < 1: return (14, 81)
+    creatinine_columns = [col for col in header if 'creatinine' in col]
+
+    patient_data = {col_i:data_i for col_i, data_i in zip(header, data)}
+
+    # change every test date column into datetime type
+    for col in creatinine_columns[::2]:
+        patient_data[col] = pd.to_datetime(patient_data[col])
+
+    patient = pd.Series(patient_data)
+
+    formatted_patient = process_patient_data(patient, creatinine_columns, data_type = 'test')
+    
+    formatted_patient.rename({  0: 'sex', 
+                                1: 'age',
+                                2: 'c1',
+                                3: 'rv1',
+                                4: 'rv2',
+                                5: 'rv_ratio',
+                                6: 'D',}, 
+                                inplace=True)
+    return formatted_patient

@@ -89,9 +89,7 @@ def get_header(row_length, dataset_type):
             header[i+1] = f'creatinine_result_{j}'
             j += 1
             i += 2 # * move to the next test by skipping two values
-
         return header
-    
     except Exception as e:
         print(f"An error occurred while creating header: {e}")
         return []
@@ -111,7 +109,8 @@ def get_change_in_last_two_days(test_dates, test_results):
                                    Should be sorted in ascending order.
                                    Should have the same length as test_results.
         outputs:
-            - (list): a list of strings representing the column names of the dataset
+            - (pd.Timedelta): the time elapsed between the last test and the first one taken within 48 hours
+            - (float): the overall change in creatinine levels within the last 48 hours
     """
     try:
         if len(test_dates) != len(test_results):
@@ -121,7 +120,7 @@ def get_change_in_last_two_days(test_dates, test_results):
         useable_test_results = [test_results.iloc[-1]] # store all test results within 48 hours
         creatinine_change = 0
 
-        if len(test_dates) < 2: # if only one test has been taken, there's no calculable change
+        if len(test_dates) < 2: # if only one test has been taken overall, there's no calculable change
             return (pd.Timedelta(0), 0)
 
         for test_num in range(len(test_dates)-2, -1, -1):
@@ -131,7 +130,7 @@ def get_change_in_last_two_days(test_dates, test_results):
             else:
                 test_num = -1
                 
-        if len(useable_test_results) < 2: # if only one test has been taken within 48 hours, there's no calculable change
+        if len(useable_test_results) < 2: # if only one test has been taken within 48 hours there's no value change
             return (pd.Timedelta(0), 0)
         
         creatinine_change = useable_test_results[0] - min(useable_test_results[1:])
@@ -140,10 +139,10 @@ def get_change_in_last_two_days(test_dates, test_results):
         print(f"An error occurred while calculating the creatinine change within 48 hours: {e}")
         return (-1, -1)
 
-
 def calculate_rv_ratio(c1, rv1, rv2, creatinine_test_dates):
     """ 
-        Calculates the rv ratio based on the time elapsed between all the taken blood tests.
+        Calculates the rv ratio based on the time elapsed between the two most recently taken blood tests.
+        Calculations follow the guidelines described in the NHS algorithm specifications.
         
         inputs: 
             - c1 (float): the most recent creatinine level measured
@@ -160,8 +159,8 @@ def calculate_rv_ratio(c1, rv1, rv2, creatinine_test_dates):
             elapsed_days = pd.Timedelta(creatinine_test_dates.iloc[-1] - creatinine_test_dates.iloc[-2]) # second most recent test result
 
         # if elapsed_days < pd.Timedelta(0):
-            # print(elapsed_days)
-            # raise ValueError("The elapsed time between the last two tests is less than or equal to zero")
+        #     print(elapsed_days)
+        #     raise ValueError("The elapsed time between the last two tests is less than or equal to zero")
         if (elapsed_days >= pd.Timedelta(0)) and (elapsed_days <= pd.Timedelta(days=7)):
             # print(f"Elapsed days in [0,7]")
             return c1/rv1
@@ -171,10 +170,9 @@ def calculate_rv_ratio(c1, rv1, rv2, creatinine_test_dates):
         elif (elapsed_days > pd.Timedelta(days=365)):
             # print(f"Elapsed days > 365")
             return 0
-    except ValueError as ve:
-        print(f"An error occurred while calculating the RV ratio: {ve}")
+    except Exception as e:
+        print(f"An error occurred while calculating the RV ratio: {e}")
         return -1
-
 
 def extract_patient_features(patient, creatinine_columns):
     """ 
@@ -193,8 +191,8 @@ def extract_patient_features(patient, creatinine_columns):
             - rv1 (float): the minimum creatinine level measured
             - rv2 (float): the median creatinine level measured
             - rv_ratio (float): the appropriate rv ratio calculated based on the time elapsed between the tests
-            - creatinine_change (int): the change in creatinine levels in the two days prior to the
-                                       last taken blood test. Also referred to as 'D'.
+            - creatinine_change (float): the change in creatinine levels in the two days prior to the
+                                         last taken blood test. Also referred to as 'D'.
     """
     # get the last non-empty column of the patient data
     last_col = patient[::-1].notnull().idxmax()
@@ -215,7 +213,6 @@ def extract_patient_features(patient, creatinine_columns):
     # print(f"Creatinine change in {elapsed_time} = {creatinine_change}")
 
     return sex, age, c1, rv1, rv2, rv_ratio, creatinine_change
-
 
 def process_patient_data(patient_data, creatinine_columns, data_type):
     """ 
@@ -241,8 +238,7 @@ def process_patient_data(patient_data, creatinine_columns, data_type):
             return pd.Series((sex, age, c1, rv1, rv2, rv_ratio, creatinine_change))
     except Exception as e:
         print(f"An error occurred while processing patient data: {e}")
-        return ([], -1) if data_type == 'train' else []
-    
+        return ((),)
 
 def prepare_train_data(data):
     """ 
@@ -283,7 +279,6 @@ def prepare_train_data(data):
                                         7: 'aki'}, 
                             inplace=True)
     return formatted_dataset
-
 
 def prepare_test_data(data):
     """ 

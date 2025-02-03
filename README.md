@@ -2,7 +2,7 @@
 # Acute Kidney Injury (AKI) Predictor
 
 A Machine Learning model for the prediction of Acute Kidney Injury (AKI) from clinical temporal changes of creatinine levels.\
-Trained on 7000+ clinical samples, this ML model can correctly predict the presence of AKI with **>96%** accuracy.
+Trained on 7000+ clinical samples, this ML model can correctly predict the presence of AKI with **>98%** accuracy.
 
 ## Requirements
 
